@@ -286,6 +286,11 @@ func serveCommand() *cli.Command {
 				Usage:   "Comma-separated exceptions to --ingest-deny-collections (same syntax).",
 				Sources: cli.EnvVars("JETSTREAM_INGEST_KEEP_COLLECTIONS"),
 			},
+			&cli.Int64Flag{
+				Name:    "backfill-max-repo-bytes",
+				Usage:   "Fail a repo whose CAR exceeds this many bytes instead of loading it into memory during steady-state backfill. 0 disables the limit.",
+				Sources: cli.EnvVars("JETSTREAM_BACKFILL_MAX_REPO_BYTES"),
+			},
 			&cli.IntFlag{
 				Name:    "verifier-resync-workers",
 				Usage:   "Concurrent chain-break resyncs. Each loads a whole repo into memory; lower it on small hosts. 0 uses the library default (32).",
@@ -756,6 +761,7 @@ func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 		BackfillRepos:                  backfillRepos,
 		SkipMergeDiscovery:             skipMergeDiscovery,
 		BackfillRepoListFile:           repoListFile,
+		BackfillMaxRepoBytes:           cmd.Int64("backfill-max-repo-bytes"),
 		UserAgent:                      cmd.String("user-agent"),
 		VerifierResyncWorkers:          cmd.Int("verifier-resync-workers"),
 		FailedRepoRetryInterval:        cmd.Duration("failed-repo-retry-interval"),

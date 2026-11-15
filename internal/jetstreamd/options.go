@@ -87,6 +87,7 @@ type Options struct {
 	BackfillRepos                  []atmos.DID
 	SkipMergeDiscovery             bool
 	BackfillRepoListFile           string
+	BackfillMaxRepoBytes           int64
 	// VerifierResyncWorkers bounds concurrent chain-break resyncs. Each one
 	// loads a whole repo into memory, so small hosts want far fewer than the
 	// atmos default of 32. Zero keeps the default.

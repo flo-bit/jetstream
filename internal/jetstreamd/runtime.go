@@ -452,6 +452,7 @@ func Build(ctx context.Context, opts Options) (*Runtime, error) {
 			BackfillRepos:                  opts.BackfillRepos,
 			SkipMergeDiscovery:             opts.SkipMergeDiscovery,
 			BackfillRepoListFile:           opts.BackfillRepoListFile,
+			BackfillMaxRepoBytes:           opts.BackfillMaxRepoBytes,
 			BackfillRetryBaseDelay:         opts.BackfillRetryBaseDelay,
 			FailedRepoRetryInterval:        opts.FailedRepoRetryInterval,
 			FailedRepoRetryWorkers:         opts.FailedRepoRetryWorkers,

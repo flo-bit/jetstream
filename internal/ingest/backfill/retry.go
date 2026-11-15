@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -84,6 +85,11 @@ type RetryConfig struct {
 	Workers     int
 	HostWorkers int
 	MaxDelay    time.Duration
+
+	// MaxRepoBytes, when > 0, fails a repo whose CAR exceeds this many
+	// bytes instead of loading it. A repo is parsed wholly in memory, so
+	// this bounds a pass's memory at roughly Workers x MaxRepoBytes.
+	MaxRepoBytes int64
 
 	// RepoListFile, when set, names a file of "did [pds-host]" lines.
 	// Each steady-state pass queues the listed DIDs the store has never
@@ -655,13 +661,17 @@ func (r *retryRunner) download(ctx context.Context, cand retryCandidate) (*atmos
 		return nil, nil, host, viaFallback, r.classifyDownloadErr(dlCtx, ctx, err)
 	}
 	defer func() { _ = body.Close() }()
+	var src io.Reader = body
+	if r.cfg.MaxRepoBytes > 0 {
+		src = &cappedReader{r: body, remaining: r.cfg.MaxRepoBytes, limit: r.cfg.MaxRepoBytes}
+	}
 
 	// LoadCompleteFromCAR (not LoadFromCAR) verifies the downloaded full repo
 	// is structurally complete. A getRepo CAR truncated exactly on a block
 	// boundary parses cleanly but omits referenced blocks; LoadCompleteFromCAR
 	// surfaces that as a transient (io.ErrUnexpectedEOF) error so this retry
 	// pass re-defers the DID rather than completing it on a partial repo.
-	rp, commit, err := atmosrepo.LoadCompleteFromCAR(bufio.NewReader(body))
+	rp, commit, err := atmosrepo.LoadCompleteFromCAR(bufio.NewReader(src))
 	if err != nil {
 		return nil, nil, host, viaFallback, r.classifyDownloadErr(dlCtx, ctx, err)
 	}
@@ -900,4 +910,33 @@ func isLocalRetryError(err error) bool {
 		strings.Contains(msg, "append batch") ||
 		strings.Contains(msg, "drain durable repo rows") ||
 		strings.Contains(msg, "complete repo")
+}
+
+// ErrRepoTooLarge reports a repo whose CAR exceeds RetryConfig.MaxRepoBytes.
+var ErrRepoTooLarge = errors.New("backfill: repo exceeds the configured size limit")
+
+// cappedReader fails with ErrRepoTooLarge once more than limit bytes have
+// been read, so an oversized repo is abandoned mid-download rather than
+// buffered.
+type cappedReader struct {
+	r         io.Reader
+	remaining int64
+	limit     int64
+}
+
+func (c *cappedReader) Read(p []byte) (int, error) {
+	if c.remaining <= 0 {
+		// At the limit: only an end of stream is acceptable.
+		var probe [1]byte
+		if n, err := c.r.Read(probe[:]); n == 0 && err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("%w (%d bytes)", ErrRepoTooLarge, c.limit)
+	}
+	if int64(len(p)) > c.remaining {
+		p = p[:c.remaining]
+	}
+	n, err := c.r.Read(p)
+	c.remaining -= int64(n)
+	return n, err
 }

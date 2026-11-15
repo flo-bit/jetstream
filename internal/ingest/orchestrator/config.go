@@ -186,6 +186,9 @@ type Config struct {
 	// never been seen. Pair with SkipMergeDiscovery.
 	BackfillRepoListFile string
 
+	// BackfillMaxRepoBytes forwards to backfill.RetryConfig.MaxRepoBytes.
+	BackfillMaxRepoBytes int64
+
 	// BackfillRetryBaseDelay, when > 0, overrides the bootstrap backfill
 	// engine's initial retry backoff (atmos default 1s). The oracle
 	// fault-injection harness sets this to a sub-millisecond value so
