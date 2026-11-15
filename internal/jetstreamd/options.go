@@ -87,11 +87,14 @@ type Options struct {
 	BackfillRepos                  []atmos.DID
 	SkipMergeDiscovery             bool
 	BackfillRepoListFile           string
-	FailedRepoRetryInterval        time.Duration
-	FailedRepoRetryWorkers         int
-	PendingRepoPassWorkers         int
-	FailedRepoRetryHostWorkers     int
-	FailedRepoRetryMaxDelay        time.Duration
+	// UserAgent, when set, replaces the User-Agent on relay and PDS requests
+	// so operators of those hosts can identify and contact this deployment.
+	UserAgent                  string
+	FailedRepoRetryInterval    time.Duration
+	FailedRepoRetryWorkers     int
+	PendingRepoPassWorkers     int
+	FailedRepoRetryHostWorkers int
+	FailedRepoRetryMaxDelay    time.Duration
 	// ResyncInterval is how often the verifier may full-repo resync any one
 	// DID. Zero is DefaultResyncInterval.
 	ResyncInterval time.Duration

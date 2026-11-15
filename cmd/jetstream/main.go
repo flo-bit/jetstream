@@ -287,6 +287,11 @@ func serveCommand() *cli.Command {
 				Sources: cli.EnvVars("JETSTREAM_INGEST_KEEP_COLLECTIONS"),
 			},
 			&cli.StringFlag{
+				Name:    "user-agent",
+				Usage:   "User-Agent for relay and PDS requests. Include a contact so host operators can reach you.",
+				Sources: cli.EnvVars("JETSTREAM_USER_AGENT"),
+			},
+			&cli.StringFlag{
 				Name:    "backfill-repo-list",
 				Usage:   "Path to a file of \"did [pds-host]\" lines. Replaces the whole-network crawl: only listed repos are backfilled, and the file is re-read on every failed-repo retry pass so new entries are picked up. Implies --skip-merge-discovery.",
 				Sources: cli.EnvVars("JETSTREAM_BACKFILL_REPO_LIST"),
@@ -746,6 +751,7 @@ func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 		BackfillRepos:                  backfillRepos,
 		SkipMergeDiscovery:             skipMergeDiscovery,
 		BackfillRepoListFile:           repoListFile,
+		UserAgent:                      cmd.String("user-agent"),
 		FailedRepoRetryInterval:        cmd.Duration("failed-repo-retry-interval"),
 		ResyncInterval:                 cmd.Duration("resync-interval"),
 		FailedRepoRetryWorkers:         cmd.Int("failed-repo-retry-workers"),

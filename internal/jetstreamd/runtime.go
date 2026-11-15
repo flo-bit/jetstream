@@ -318,9 +318,13 @@ func Build(ctx context.Context, opts Options) (*Runtime, error) {
 	}
 
 	backfillMetrics := backfill.NewMetrics(metrics.Registry)
+	upstreamHTTP := gttp.New(append(xrpc.BulkDownloadOpts(), transportOpt...)...)
+	if opts.UserAgent != "" {
+		upstreamHTTP.Transport = userAgentTransport{base: upstreamHTTP.Transport, userAgent: opts.UserAgent}
+	}
 	xrpcClient := &xrpc.Client{
 		Host:       relayHTTPURL,
-		HTTPClient: gt.Some(gttp.New(append(xrpc.BulkDownloadOpts(), transportOpt...)...)),
+		HTTPClient: gt.Some(upstreamHTTP),
 	}
 
 	resolver := newIdentityResolver(opts)
