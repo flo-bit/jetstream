@@ -692,3 +692,60 @@ func TestRetryRunner_ParkedClientDefers(t *testing.T) {
 	require.Equal(t, until.UTC(), rs.Backfill.NextAttemptAt)
 	require.Zero(t, rs.Backfill.RetryCount, "a parked skip is not a failed attempt")
 }
+
+// TestRetryRunner_SpilledRepoCompletesAndIsMarkedLarge: a repo over the
+// spill threshold is loaded through a temporary file, archives exactly as
+// an in-memory one does, is recorded as large (so the verifier never
+// resyncs it in memory), and leaves no temporary file behind.
+func TestRetryRunner_SpilledRepoCompletesAndIsMarkedLarge(t *testing.T) {
+	t.Parallel()
+	st, w, segmentsDir := newRetryTestWriter(t)
+	bs := newSeededStore(t, st, nil)
+	ctx := context.Background()
+	did := atmos.DID("did:plc:retryspill")
+	fixture := buildRepoFixture(t, did)
+	srv := newStubServer(t, map[atmos.DID]repoFixture{did: fixture})
+	host := mustURLHost(t, srv.srv.URL)
+	now := time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC)
+	spillDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(spillDir, "repo-stale.blocks"), []byte("x"), 0o600))
+
+	require.NoError(t, bs.OnDiscover(ctx, atmossync.ListReposEntry{DID: did, Active: true}))
+	require.NoError(t, bs.OnFail(ctx, did, host, errors.New("xrpc: HTTP 503: bootstrap unavailable"), 1))
+	require.NoError(t, bs.RecordRetryFailure(ctx, did, host, errors.New("xrpc 503 unavailable"), now.Add(-time.Hour)))
+
+	r, err := newRetryRunner(RetryConfig{
+		Store:       st,
+		Writer:      w,
+		HTTPClient:  srv.srv.Client(),
+		RelayURL:    srv.srv.URL,
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Interval:    time.Hour,
+		Workers:     1,
+		HostWorkers: 1,
+		MaxDelay:    24 * time.Hour,
+		SpillDir:    spillDir,
+		// Zero: every repo spills.
+		SpillThreshold: 0,
+		now:            func() time.Time { return now },
+	})
+	require.NoError(t, err)
+	require.NoError(t, r.runPass(ctx))
+
+	events := collectActiveEvents(t, filepath.Join(segmentsDir, ingest.SegmentFilename(0)))
+	require.Len(t, events, 2)
+	require.Equal(t, segment.KindSync, events[0].Kind)
+	require.Equal(t, segment.KindCreateResync, events[1].Kind)
+
+	rs, err := bs.readRepoStatus(did)
+	require.NoError(t, err)
+	require.Equal(t, StatusComplete, rs.Backfill.Status)
+
+	resyncable, err := RepoResyncable(ctx, st, did)
+	require.NoError(t, err)
+	require.False(t, resyncable, "a repo loaded from disk must not be resynced in memory")
+
+	left, err := os.ReadDir(spillDir)
+	require.NoError(t, err)
+	require.Empty(t, left, "stale and per-repo temporary files are removed")
+}

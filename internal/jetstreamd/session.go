@@ -125,7 +125,7 @@ func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore) (*atmossyn
 	var shouldResync gt.Option[func(atmos.DID) bool]
 	if f.resyncKnownReposOnly {
 		shouldResync = gt.Some(func(did atmos.DID) bool {
-			known, err := backfill.RepoBackfilled(context.Background(), f.store, did)
+			known, err := backfill.RepoResyncable(context.Background(), f.store, did)
 			// On a metadata error, resync: fetching too much is safe.
 			return err != nil || known
 		})

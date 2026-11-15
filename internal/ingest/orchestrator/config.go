@@ -188,6 +188,10 @@ type Config struct {
 
 	// BackfillMaxRepoBytes forwards to backfill.RetryConfig.MaxRepoBytes.
 	BackfillMaxRepoBytes int64
+	// BackfillSpillDir and BackfillSpillThreshold forward to
+	// backfill.RetryConfig.SpillDir and SpillThreshold.
+	BackfillSpillDir       string
+	BackfillSpillThreshold int64
 
 	// BackfillRetryBaseDelay, when > 0, overrides the bootstrap backfill
 	// engine's initial retry backoff (atmos default 1s). The oracle

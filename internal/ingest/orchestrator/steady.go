@@ -131,20 +131,22 @@ func (o *Orchestrator) runSteadyState(ctx context.Context) error {
 		if o.cfg.FailedRepoRetryInterval > 0 {
 			g.Go(func() error {
 				err := backfill.RunFailedRepoRetry(gctx, backfill.RetryConfig{
-					Store:         o.cfg.Store,
-					Writer:        c.Writer(),
-					HTTPClient:    o.cfg.HTTPClient,
-					RelayURL:      o.cfg.RelayURL,
-					Logger:        o.cfg.Logger,
-					Metrics:       o.cfg.BackfillMetrics,
-					DropMetrics:   o.cfg.DropMetrics,
-					NewHostClient: o.cfg.BackfillNewHostClient,
-					Interval:      o.cfg.FailedRepoRetryInterval,
-					Workers:       o.cfg.FailedRepoRetryWorkers,
-					HostWorkers:   o.cfg.FailedRepoRetryHostWorkers,
-					MaxDelay:      o.cfg.FailedRepoRetryMaxDelay,
-					RepoListFile:  o.cfg.BackfillRepoListFile,
-					MaxRepoBytes:  o.cfg.BackfillMaxRepoBytes,
+					Store:          o.cfg.Store,
+					Writer:         c.Writer(),
+					HTTPClient:     o.cfg.HTTPClient,
+					RelayURL:       o.cfg.RelayURL,
+					Logger:         o.cfg.Logger,
+					Metrics:        o.cfg.BackfillMetrics,
+					DropMetrics:    o.cfg.DropMetrics,
+					NewHostClient:  o.cfg.BackfillNewHostClient,
+					Interval:       o.cfg.FailedRepoRetryInterval,
+					Workers:        o.cfg.FailedRepoRetryWorkers,
+					HostWorkers:    o.cfg.FailedRepoRetryHostWorkers,
+					MaxDelay:       o.cfg.FailedRepoRetryMaxDelay,
+					RepoListFile:   o.cfg.BackfillRepoListFile,
+					MaxRepoBytes:   o.cfg.BackfillMaxRepoBytes,
+					SpillDir:       o.cfg.BackfillSpillDir,
+					SpillThreshold: o.cfg.BackfillSpillThreshold,
 				})
 				if errors.Is(err, context.Canceled) {
 					return nil

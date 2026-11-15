@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/bluesky-social/jetstream/internal/metastore"
 	"github.com/jcalabro/atmos"
 	atmosbackfill "github.com/jcalabro/atmos/backfill"
+	"github.com/jcalabro/atmos/mst"
 	atmosrepo "github.com/jcalabro/atmos/repo"
 	atmossync "github.com/jcalabro/atmos/sync"
 	"github.com/jcalabro/atmos/xrpc"
@@ -90,6 +93,12 @@ type RetryConfig struct {
 	// bytes instead of loading it. A repo is parsed wholly in memory, so
 	// this bounds a pass's memory at roughly Workers x MaxRepoBytes.
 	MaxRepoBytes int64
+
+	// SpillDir, when set, lets a repo larger than SpillThreshold bytes be
+	// loaded through a temporary file in that directory instead of memory
+	// (spillstore.go). Such repos are recorded as large (known.go).
+	SpillDir       string
+	SpillThreshold int64
 
 	// RepoListFile, when set, names a file of "did [pds-host]" lines.
 	// Each steady-state pass queues the listed DIDs the store has never
@@ -302,6 +311,16 @@ func newRetryRunner(cfg RetryConfig) (*retryRunner, error) {
 	}
 	if cfg.parkMax <= 0 {
 		cfg.parkMax = hostParkMaxDelay
+	}
+	if cfg.SpillDir != "" {
+		// Files left by a previous process belong to no repo any more.
+		if err := os.MkdirAll(cfg.SpillDir, 0o700); err != nil {
+			return nil, fmt.Errorf("backfill: retry: spill dir: %w", err)
+		}
+		stale, _ := filepath.Glob(filepath.Join(cfg.SpillDir, "repo-*.blocks"))
+		for _, name := range stale {
+			_ = os.Remove(name)
+		}
 	}
 	if cfg.NewHostClient == nil {
 		cfg.NewHostClient = NewHostClientBuilder(cfg.RelayURL, cfg.HTTPClient)
@@ -577,6 +596,15 @@ func (r *retryRunner) tryRepo(ctx context.Context, cand retryCandidate) (string,
 	if err != nil {
 		return host, viaFallback, err
 	}
+	defer releaseRepo(rp, nil)
+	if spill, ok := rp.Store.(*spillStore); ok && spill.Spilled() {
+		// Recorded before ingesting so a crash cannot leave a large repo
+		// backfilled yet eligible for an in-memory resync.
+		if err := markLargeRepo(ctx, r.cfg.Store, cand.DID); err != nil {
+			return host, viaFallback, fmt.Errorf("backfill: retry: complete repo: %w", err)
+		}
+		r.cfg.Logger.InfoContext(ctx, "loading large repo from disk", "did", string(cand.DID))
+	}
 	if err := r.handler.HandleRepoResync(ctx, cand.DID, rp, commit); err != nil {
 		return host, viaFallback, err
 	}
@@ -671,17 +699,43 @@ func (r *retryRunner) download(ctx context.Context, cand retryCandidate) (*atmos
 	// boundary parses cleanly but omits referenced blocks; LoadCompleteFromCAR
 	// surfaces that as a transient (io.ErrUnexpectedEOF) error so this retry
 	// pass re-defers the DID rather than completing it on a partial repo.
-	rp, commit, err := atmosrepo.LoadCompleteFromCAR(bufio.NewReader(src))
+	var store mst.BlockStore = mst.NewMemBlockStore()
+	var spill *spillStore
+	if r.cfg.SpillDir != "" {
+		spill = newSpillStore(r.cfg.SpillDir, r.cfg.SpillThreshold)
+		store = spill
+	}
+	rp, commit, err := atmosrepo.LoadFromCARWithStore(bufio.NewReader(src), store)
+	if err == nil {
+		if spill != nil && spill.Spilled() {
+			// Too large for memory: walk without retaining the tree.
+			rp.Tree.SetEvictOnWalk(true)
+		}
+		err = rp.CheckComplete()
+	}
 	if err != nil {
+		releaseRepo(rp, spill)
 		return nil, nil, host, viaFallback, r.classifyDownloadErr(dlCtx, ctx, err)
 	}
 	// The retry path routes directly to untrusted PDSes and bypasses the
 	// atmos engine (which performs this same check): a CAR whose commit
 	// identifies a different DID must not be resynced under cand.DID.
 	if rp.DID != cand.DID {
+		releaseRepo(rp, spill)
 		return nil, nil, host, viaFallback, fmt.Errorf("backfill: retry: getRepo DID mismatch: requested %s, CAR commit is %s", cand.DID, rp.DID)
 	}
 	return rp, commit, host, viaFallback, nil
+}
+
+// releaseRepo removes the temporary file behind a spilled repo. spill may
+// be nil, in which case rp's store is checked.
+func releaseRepo(rp *atmosrepo.Repo, spill *spillStore) {
+	if spill == nil && rp != nil {
+		spill, _ = rp.Store.(*spillStore)
+	}
+	if spill != nil {
+		_ = spill.Close()
+	}
 }
 
 func (r *retryRunner) clientForHost(host string) (*atmossync.Client, error) {
