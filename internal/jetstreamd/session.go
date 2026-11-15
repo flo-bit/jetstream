@@ -65,9 +65,10 @@ type sessionFactory struct {
 	// resyncWorkers bounds concurrent chain-break resyncs, each of which
 	// holds a whole repo in memory. Zero is the atmos default (32).
 	resyncWorkers int
-	// resyncKnownReposOnly limits automatic resyncs to repos with a backfill
-	// row. With a repo list, every other repo holds nothing this instance
-	// archives, so downloading it to repair its chain is wasted work.
+	// resyncKnownReposOnly limits automatic resyncs to repos already
+	// backfilled. With a repo list, every other repo either holds nothing
+	// this instance archives or is still queued for a full download, so
+	// fetching it to repair its chain is wasted work.
 	resyncKnownReposOnly bool
 
 	// orch is the orchestrator config with every process-lifetime field set.
@@ -124,7 +125,7 @@ func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore) (*atmossyn
 	var shouldResync gt.Option[func(atmos.DID) bool]
 	if f.resyncKnownReposOnly {
 		shouldResync = gt.Some(func(did atmos.DID) bool {
-			known, err := backfill.RepoKnown(context.Background(), f.store, did)
+			known, err := backfill.RepoBackfilled(context.Background(), f.store, did)
 			// On a metadata error, resync: fetching too much is safe.
 			return err != nil || known
 		})
