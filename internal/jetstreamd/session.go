@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bluesky-social/jetstream/internal/ingest"
+	"github.com/bluesky-social/jetstream/internal/ingest/backfill"
 	"github.com/bluesky-social/jetstream/internal/ingest/orchestrator"
 	"github.com/bluesky-social/jetstream/internal/ingest/syncstate"
 	"github.com/bluesky-social/jetstream/internal/leader"
@@ -64,6 +65,10 @@ type sessionFactory struct {
 	// resyncWorkers bounds concurrent chain-break resyncs, each of which
 	// holds a whole repo in memory. Zero is the atmos default (32).
 	resyncWorkers int
+	// resyncKnownReposOnly limits automatic resyncs to repos with a backfill
+	// row. With a repo list, every other repo holds nothing this instance
+	// archives, so downloading it to repair its chain is wasted work.
+	resyncKnownReposOnly bool
 
 	// orch is the orchestrator config with every process-lifetime field set.
 	// build fills in the per-session ones.
@@ -116,12 +121,21 @@ func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore) (*atmossyn
 		resyncLimit = rate.Inf
 	}
 	verifierLogger := f.logger.With(slog.String("component", "verifier"))
+	var shouldResync gt.Option[func(atmos.DID) bool]
+	if f.resyncKnownReposOnly {
+		shouldResync = gt.Some(func(did atmos.DID) bool {
+			known, err := backfill.RepoKnown(context.Background(), f.store, did)
+			// On a metadata error, resync: fetching too much is safe.
+			return err != nil || known
+		})
+	}
 	verifier, err := atmossync.NewVerifier(atmossync.VerifierOptions{
-		Directory:   f.directory,
-		StateStore:  stateStore,
-		SyncClient:  gt.Some(f.syncClient),
-		ResyncLimit: gt.Some(resyncLimit),
-		ResyncBurst: gt.Some(resyncBurst),
+		ShouldResync: shouldResync,
+		Directory:    f.directory,
+		StateStore:   stateStore,
+		SyncClient:   gt.Some(f.syncClient),
+		ResyncLimit:  gt.Some(resyncLimit),
+		ResyncBurst:  gt.Some(resyncBurst),
 		// Zero selects the atmos default.
 		AsyncResyncWorkers: gt.Some(f.resyncWorkers),
 		OnVerificationFailure: gt.Some(func(did atmos.DID, vErr error) {

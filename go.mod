@@ -93,3 +93,5 @@ require (
 	google.golang.org/grpc v1.85.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/jcalabro/atmos => github.com/flo-bit/atmos v0.0.0-20261120110556-502cd0c474ca
