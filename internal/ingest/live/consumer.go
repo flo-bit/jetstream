@@ -782,6 +782,23 @@ func (c *Consumer) processBatch(ctx context.Context, batch []streaming.Event) er
 				continue
 			}
 
+			if n := len(segEvts); n > 0 {
+				kept := segEvts[:0]
+				for i := range segEvts {
+					if !ingest.CollectionDenied(segEvts[i].Collection) {
+						kept = append(kept, segEvts[i])
+					}
+				}
+				segEvts = kept
+				if filtered := n - len(kept); filtered > 0 {
+					c.cfg.DropMetrics.AddDropped(ingest.DropSourceLive, ingest.DropReasonFilteredCollection, filtered)
+					if len(kept) == 0 {
+						c.noteUpstreamSeq(evt.Seq)
+						continue
+					}
+				}
+			}
+
 			if stale, err := c.dropStaleOrderedAsyncResync(ctx, evt, segEvts); err != nil {
 				return err
 			} else if stale {

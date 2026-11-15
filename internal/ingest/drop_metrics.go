@@ -57,6 +57,10 @@ const (
 	// client would disagree about whether it exists. Drops the op;
 	// siblings survive.
 	DropReasonInvalidDataModel DropReason = "invalid_data_model"
+
+	// DropReasonFilteredCollection: the op's collection is excluded by
+	// the operator's ingest collection filter (collection_filter.go).
+	DropReasonFilteredCollection DropReason = "filtered_collection"
 )
 
 var dropSources = []DropSource{DropSourceLive, DropSourceBackfill}
@@ -68,6 +72,7 @@ var dropReasons = []DropReason{
 	DropReasonFieldTooLong,
 	DropReasonMissingBlock,
 	DropReasonInvalidDataModel,
+	DropReasonFilteredCollection,
 }
 
 // DropMetrics owns the shared dropped-events counter family for both

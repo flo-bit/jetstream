@@ -62,6 +62,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bluesky-social/jetstream/internal/ingest"
 	"github.com/bluesky-social/jetstream/internal/jetstreamd"
 	"github.com/bluesky-social/jetstream/internal/objstore"
 	"github.com/bluesky-social/jetstream/internal/version"
@@ -274,6 +275,16 @@ func serveCommand() *cli.Command {
 				Usage:   "DEBUG ONLY: comma-separated DID list to backfill instead of walking listRepos. Empty = normal production behavior.",
 				Sources: cli.EnvVars("JETSTREAM_BACKFILL_REPOS"),
 				Value:   "",
+			},
+			&cli.StringFlag{
+				Name:    "ingest-deny-collections",
+				Usage:   "SPIKE: comma-separated collections (exact NSIDs or prefix.*) whose records are dropped at ingest.",
+				Sources: cli.EnvVars("JETSTREAM_INGEST_DENY_COLLECTIONS"),
+			},
+			&cli.StringFlag{
+				Name:    "ingest-keep-collections",
+				Usage:   "SPIKE: exceptions to --ingest-deny-collections.",
+				Sources: cli.EnvVars("JETSTREAM_INGEST_KEEP_COLLECTIONS"),
 			},
 			&cli.BoolFlag{
 				Name:    "skip-merge-discovery",
@@ -681,6 +692,9 @@ func storageConfigFromCommand(cmd *cli.Command) (jetstreamd.StorageConfig, strin
 func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 	backfillRepos, err := parseBackfillRepos(cmd.String("backfill-repos"))
 	if err != nil {
+		return jetstreamd.Options{}, err
+	}
+	if err := ingest.SetCollectionFilter(cmd.String("ingest-deny-collections"), cmd.String("ingest-keep-collections")); err != nil {
 		return jetstreamd.Options{}, err
 	}
 	maxBackfillRepos := cmd.Int("max-backfill-repos")

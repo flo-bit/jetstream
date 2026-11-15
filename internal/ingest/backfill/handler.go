@@ -218,6 +218,10 @@ func (h *SegmentHandler) handleRepo(ctx context.Context, did atmos.DID, r *repo.
 // while siblings archive normally. Returns ok=false for a drop.
 func (h *SegmentHandler) validRecordPath(ctx context.Context, did atmos.DID, key string) (collection, rkey string, ok bool) {
 	collection, rkey, reason := splitRecordPath(key)
+	if reason == "" && ingest.CollectionDenied(collection) {
+		h.dropMetrics.IncDropped(ingest.DropSourceBackfill, ingest.DropReasonFilteredCollection)
+		return "", "", false
+	}
 	if reason == "" {
 		return collection, rkey, true
 	}
@@ -268,7 +272,7 @@ func (h *SegmentHandler) validateRepoMaterializations(ctx context.Context, did a
 			return err
 		}
 		collection, rkey, reason := splitRecordPath(key)
-		if reason != "" {
+		if reason != "" || ingest.CollectionDenied(collection) {
 			return nil
 		}
 		payload, err := r.Store.GetBlock(cid)
