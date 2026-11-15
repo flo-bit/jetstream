@@ -87,6 +87,10 @@ type Options struct {
 	BackfillRepos                  []atmos.DID
 	SkipMergeDiscovery             bool
 	BackfillRepoListFile           string
+	// VerifierResyncWorkers bounds concurrent chain-break resyncs. Each one
+	// loads a whole repo into memory, so small hosts want far fewer than the
+	// atmos default of 32. Zero keeps the default.
+	VerifierResyncWorkers int
 	// UserAgent, when set, replaces the User-Agent on relay and PDS requests
 	// so operators of those hosts can identify and contact this deployment.
 	UserAgent                  string

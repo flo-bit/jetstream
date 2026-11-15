@@ -61,6 +61,9 @@ type sessionFactory struct {
 	// budget (Options.ResyncInterval, Options.UnlimitedResyncs).
 	resyncInterval   time.Duration
 	unlimitedResyncs bool
+	// resyncWorkers bounds concurrent chain-break resyncs, each of which
+	// holds a whole repo in memory. Zero is the atmos default (32).
+	resyncWorkers int
 
 	// orch is the orchestrator config with every process-lifetime field set.
 	// build fills in the per-session ones.
@@ -119,6 +122,8 @@ func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore) (*atmossyn
 		SyncClient:  gt.Some(f.syncClient),
 		ResyncLimit: gt.Some(resyncLimit),
 		ResyncBurst: gt.Some(resyncBurst),
+		// Zero selects the atmos default.
+		AsyncResyncWorkers: gt.Some(f.resyncWorkers),
 		OnVerificationFailure: gt.Some(func(did atmos.DID, vErr error) {
 			f.verifierMetrics.IncFailure(obs.Classify(vErr))
 			verifierLogger.Warn("verification failure",

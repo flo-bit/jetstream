@@ -415,6 +415,7 @@ func Build(ctx context.Context, opts Options) (*Runtime, error) {
 		logger:           processLogger,
 		resyncInterval:   opts.effectiveResyncInterval(),
 		unlimitedResyncs: opts.UnlimitedResyncs,
+		resyncWorkers:    opts.VerifierResyncWorkers,
 		orch: orchestrator.Config{
 			DataDir:    opts.DataDir,
 			FS:         opts.StorageFS,

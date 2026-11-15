@@ -461,6 +461,7 @@ func buildDisaggregated(ctx context.Context, opts Options, processLogger, logger
 		logger:           processLogger,
 		resyncInterval:   opts.effectiveResyncInterval(),
 		unlimitedResyncs: opts.UnlimitedResyncs,
+		resyncWorkers:    opts.VerifierResyncWorkers,
 		orch: orchestrator.Config{
 			RelayURL:      opts.RelayURL,
 			HTTPClient:    xrpcClient.HTTPClient.Val(),

@@ -286,6 +286,11 @@ func serveCommand() *cli.Command {
 				Usage:   "Comma-separated exceptions to --ingest-deny-collections (same syntax).",
 				Sources: cli.EnvVars("JETSTREAM_INGEST_KEEP_COLLECTIONS"),
 			},
+			&cli.IntFlag{
+				Name:    "verifier-resync-workers",
+				Usage:   "Concurrent chain-break resyncs. Each loads a whole repo into memory; lower it on small hosts. 0 uses the library default (32).",
+				Sources: cli.EnvVars("JETSTREAM_VERIFIER_RESYNC_WORKERS"),
+			},
 			&cli.StringFlag{
 				Name:    "user-agent",
 				Usage:   "User-Agent for relay and PDS requests. Include a contact so host operators can reach you.",
@@ -752,6 +757,7 @@ func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 		SkipMergeDiscovery:             skipMergeDiscovery,
 		BackfillRepoListFile:           repoListFile,
 		UserAgent:                      cmd.String("user-agent"),
+		VerifierResyncWorkers:          cmd.Int("verifier-resync-workers"),
 		FailedRepoRetryInterval:        cmd.Duration("failed-repo-retry-interval"),
 		ResyncInterval:                 cmd.Duration("resync-interval"),
 		FailedRepoRetryWorkers:         cmd.Int("failed-repo-retry-workers"),
