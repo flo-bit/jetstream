@@ -73,6 +73,7 @@ func (o *Orchestrator) runBootstrap(ctx context.Context) error {
 				NewHostClient:     o.cfg.BackfillNewHostClient,
 				BackfillBatchSize: o.cfg.BackfillBatchSize,
 				BackfillRepos:     o.cfg.BackfillRepos,
+				SkipFleet:         o.cfg.BackfillRepoListFile != "",
 				IdentityResolver:  o.cfg.Directory.Resolver,
 				RetryBaseDelay:    o.cfg.BackfillRetryBaseDelay,
 				AfterRepoComplete: o.cfg.AfterRepoComplete,

@@ -85,6 +85,11 @@ type RetryConfig struct {
 	HostWorkers int
 	MaxDelay    time.Duration
 
+	// RepoListFile, when set, names a file of "did [pds-host]" lines.
+	// Each steady-state pass queues the listed DIDs the store has never
+	// seen (repolist.go). Ignored by the pending pass.
+	RepoListFile string
+
 	// DownloadTimeout bounds one retry attempt's network phase (getRepo
 	// + CAR read). Zero → atmos backfill.DefaultDownloadTimeout (5m).
 	// Negative disables the bound, leaving only the transport's own
@@ -145,6 +150,9 @@ type retryRunner struct {
 	// writes batches failure and deferral writes while a pass runs; nil
 	// outside one, when each is written directly.
 	writes *retryWrites
+
+	// repoList is the RepoListFile version last reconciled.
+	repoList repoListState
 }
 
 func RunFailedRepoRetry(ctx context.Context, cfg RetryConfig) error {
@@ -330,6 +338,12 @@ func (r *retryRunner) runPass(ctx context.Context) error {
 		"host_workers", r.cfg.HostWorkers,
 		"pending_pass", r.cfg.pendingPass,
 	)
+
+	if !r.cfg.pendingPass {
+		if err := r.reconcileRepoList(ctx); err != nil {
+			return err
+		}
+	}
 
 	var cands []retryCandidate
 	interned := make(map[string]string)

@@ -86,6 +86,7 @@ type Options struct {
 	SteadyMaxSegmentBytes          int64 // test-only; zero is the writer's or maintainer's default
 	BackfillRepos                  []atmos.DID
 	SkipMergeDiscovery             bool
+	BackfillRepoListFile           string
 	FailedRepoRetryInterval        time.Duration
 	FailedRepoRetryWorkers         int
 	PendingRepoPassWorkers         int

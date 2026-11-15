@@ -180,6 +180,12 @@ type Config struct {
 	// development while running against production.
 	SkipMergeDiscovery bool
 
+	// BackfillRepoListFile, when set, replaces the whole-network crawl:
+	// bootstrap downloads nothing and each steady-state retry pass queues
+	// the DIDs listed in this file ("did [pds-host]" per line) that have
+	// never been seen. Pair with SkipMergeDiscovery.
+	BackfillRepoListFile string
+
 	// BackfillRetryBaseDelay, when > 0, overrides the bootstrap backfill
 	// engine's initial retry backoff (atmos default 1s). The oracle
 	// fault-injection harness sets this to a sub-millisecond value so

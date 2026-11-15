@@ -143,6 +143,7 @@ func (o *Orchestrator) runSteadyState(ctx context.Context) error {
 					Workers:       o.cfg.FailedRepoRetryWorkers,
 					HostWorkers:   o.cfg.FailedRepoRetryHostWorkers,
 					MaxDelay:      o.cfg.FailedRepoRetryMaxDelay,
+					RepoListFile:  o.cfg.BackfillRepoListFile,
 				})
 				if errors.Is(err, context.Canceled) {
 					return nil

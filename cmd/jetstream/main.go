@@ -278,13 +278,18 @@ func serveCommand() *cli.Command {
 			},
 			&cli.StringFlag{
 				Name:    "ingest-deny-collections",
-				Usage:   "SPIKE: comma-separated collections (exact NSIDs or prefix.*) whose records are dropped at ingest.",
+				Usage:   "Comma-separated collections (exact NSIDs or prefix.* wildcards) whose records are dropped at ingest, on both backfill and the live firehose. Dropped records cannot be recovered without a new backfill.",
 				Sources: cli.EnvVars("JETSTREAM_INGEST_DENY_COLLECTIONS"),
 			},
 			&cli.StringFlag{
 				Name:    "ingest-keep-collections",
-				Usage:   "SPIKE: exceptions to --ingest-deny-collections.",
+				Usage:   "Comma-separated exceptions to --ingest-deny-collections (same syntax).",
 				Sources: cli.EnvVars("JETSTREAM_INGEST_KEEP_COLLECTIONS"),
+			},
+			&cli.StringFlag{
+				Name:    "backfill-repo-list",
+				Usage:   "Path to a file of \"did [pds-host]\" lines. Replaces the whole-network crawl: only listed repos are backfilled, and the file is re-read on every failed-repo retry pass so new entries are picked up. Implies --skip-merge-discovery.",
+				Sources: cli.EnvVars("JETSTREAM_BACKFILL_REPO_LIST"),
 			},
 			&cli.BoolFlag{
 				Name:    "skip-merge-discovery",
@@ -708,7 +713,11 @@ func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 	}
 
 	skipMergeDiscovery := cmd.Bool("skip-merge-discovery")
-	if maxBackfillRepos > 0 || len(backfillRepos) > 0 {
+	repoListFile := cmd.String("backfill-repo-list")
+	if repoListFile != "" && (maxBackfillRepos > 0 || len(backfillRepos) > 0) {
+		return jetstreamd.Options{}, fmt.Errorf("serve: --backfill-repo-list cannot be combined with --backfill-repos or --max-backfill-repos")
+	}
+	if maxBackfillRepos > 0 || len(backfillRepos) > 0 || repoListFile != "" {
 		skipMergeDiscovery = true
 	}
 
@@ -736,6 +745,7 @@ func serveOptionsFromCommand(cmd *cli.Command) (jetstreamd.Options, error) {
 		BackfillAsyncFlushWorkers:      cmd.Int("backfill-async-flush-workers"),
 		BackfillRepos:                  backfillRepos,
 		SkipMergeDiscovery:             skipMergeDiscovery,
+		BackfillRepoListFile:           repoListFile,
 		FailedRepoRetryInterval:        cmd.Duration("failed-repo-retry-interval"),
 		ResyncInterval:                 cmd.Duration("resync-interval"),
 		FailedRepoRetryWorkers:         cmd.Int("failed-repo-retry-workers"),

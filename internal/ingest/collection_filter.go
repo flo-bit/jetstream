@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 )
 
-// SPIKE: process-wide ingest collection filter. Record-level events
+// Process-wide ingest collection filter. Record-level events
 // (create/update/delete/resync rows) whose collection is denied are
 // dropped before they reach the segment writer, on both the backfill
 // and the live path. DID-level events carry no collection and always

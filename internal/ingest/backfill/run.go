@@ -56,7 +56,11 @@ type Config struct {
 	// the internal struct for one release so startup can reject it loudly.
 	BackfillWorkers int
 
-	BackfillRepos    []atmos.DID
+	BackfillRepos []atmos.DID
+	// SkipFleet skips the whole-network listHosts/listRepos crawl even
+	// when BackfillRepos is empty, so bootstrap completes with no repos
+	// and steady-state repo-list discovery owns every download.
+	SkipFleet        bool
 	IdentityResolver atmosidentity.Resolver
 
 	MaxRetries     int
@@ -167,7 +171,7 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		defer stopDrainer()
 
-		if len(cfg.BackfillRepos) > 0 {
+		if len(cfg.BackfillRepos) > 0 || cfg.SkipFleet {
 			logger.InfoContext(ctx, "starting selected repo backfill", "repos", len(cfg.BackfillRepos))
 			err := runSelectedRepos(runCtx, selectedReposConfig{
 				Repos: cfg.BackfillRepos, Store: st, Handler: handler,
