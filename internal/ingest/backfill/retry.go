@@ -96,9 +96,15 @@ type RetryConfig struct {
 
 	// SpillDir, when set, lets a repo larger than SpillThreshold bytes be
 	// loaded through a temporary file in that directory instead of memory
-	// (spillstore.go). Such repos are recorded as large (known.go).
+	// (spillstore.go).
 	SpillDir       string
 	SpillThreshold int64
+
+	// ChainRev, when set, reports the newest rev the live stream has
+	// processed for a repo ("" when none). A download older than that is
+	// discarded: appending it would replace records the live stream has
+	// already archived from later commits.
+	ChainRev func(ctx context.Context, did atmos.DID) (string, error)
 
 	// RepoListFile, when set, names a file of "did [pds-host]" lines.
 	// Each steady-state pass queues the listed DIDs the store has never
@@ -598,12 +604,18 @@ func (r *retryRunner) tryRepo(ctx context.Context, cand retryCandidate) (string,
 	}
 	defer releaseRepo(rp, nil)
 	if spill, ok := rp.Store.(*spillStore); ok && spill.Spilled() {
-		// Recorded before ingesting so a crash cannot leave a large repo
-		// backfilled yet eligible for an in-memory resync.
-		if err := markLargeRepo(ctx, r.cfg.Store, cand.DID); err != nil {
-			return host, viaFallback, fmt.Errorf("backfill: retry: complete repo: %w", err)
-		}
 		r.cfg.Logger.InfoContext(ctx, "loading large repo from disk", "did", string(cand.DID))
+	}
+	if r.cfg.ChainRev != nil {
+		live, err := r.cfg.ChainRev(ctx, cand.DID)
+		if err != nil {
+			return host, viaFallback, fmt.Errorf("backfill: retry: complete repo: chain rev: %w", err)
+		}
+		if live > commit.Rev {
+			// The account committed while this copy was in flight. A later
+			// pass downloads it again.
+			return host, viaFallback, fmt.Errorf("%w: downloaded rev %s, live rev %s", ErrRepoStale, commit.Rev, live)
+		}
 	}
 	if err := r.handler.HandleRepoResync(ctx, cand.DID, rp, commit); err != nil {
 		return host, viaFallback, err
@@ -994,3 +1006,7 @@ func (c *cappedReader) Read(p []byte) (int, error) {
 	c.remaining -= int64(n)
 	return n, err
 }
+
+// ErrRepoStale reports a downloaded repo older than what the live stream
+// has already processed for the account.
+var ErrRepoStale = errors.New("backfill: downloaded repo is older than the live stream")

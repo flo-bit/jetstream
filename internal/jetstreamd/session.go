@@ -40,6 +40,10 @@ import (
 // resync is allowed again.
 const resyncBurst = 1
 
+// chainBreakRequeueInterval is the least time between two re-downloads of
+// one repo triggered by chain breaks.
+const chainBreakRequeueInterval = 30 * time.Minute
+
 // writerSession holds one session's write-side state.
 type writerSession struct {
 	orch       *orchestrator.Orchestrator
@@ -65,11 +69,12 @@ type sessionFactory struct {
 	// resyncWorkers bounds concurrent chain-break resyncs, each of which
 	// holds a whole repo in memory. Zero is the atmos default (32).
 	resyncWorkers int
-	// resyncKnownReposOnly limits automatic resyncs to repos already
-	// backfilled. With a repo list, every other repo either holds nothing
-	// this instance archives or is still queued for a full download, so
-	// fetching it to repair its chain is wasted work.
-	resyncKnownReposOnly bool
+	// requeueOnChainBreak replaces the verifier's in-memory resync, which
+	// loads a whole repo, with a queued re-download by the steady-state
+	// retry pass, which is disk-backed and bounded. Set with a repo list:
+	// repos outside it hold nothing this instance archives and are simply
+	// not repaired.
+	requeueOnChainBreak bool
 
 	// orch is the orchestrator config with every process-lifetime field set.
 	// build fills in the per-session ones.
@@ -90,12 +95,22 @@ func (f *sessionFactory) buildWith(store metastore.Store, disagg *orchestrator.D
 	// cached until its compactor has scheduled a pass.
 	schedule := orchestrator.NewCompactionScheduleState()
 
-	verifier, err := f.newVerifier(stateStore)
+	// One backfill store for the retry pass and the verifier's chain-break
+	// hook, so both move the same status counts.
+	var retryStore *backfill.Store
+	if f.requeueOnChainBreak {
+		retryStore = backfill.NewStore(store, f.orch.BackfillMetrics)
+		if err := retryStore.SeedCounts(context.Background()); err != nil {
+			return nil, fmt.Errorf("serve: seed backfill counts: %w", err)
+		}
+	}
+	verifier, err := f.newVerifier(stateStore, retryStore)
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := f.orch
+	cfg.RetryBackfillStore = retryStore
 	cfg.Store = store
 	cfg.Disaggregated = disagg
 	cfg.Verifier = verifier
@@ -116,18 +131,22 @@ func (f *sessionFactory) buildWith(store metastore.Store, disagg *orchestrator.D
 }
 
 // newVerifier builds a session's firehose verifier over stateStore.
-func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore) (*atmossync.Verifier, error) {
+func (f *sessionFactory) newVerifier(stateStore atmossync.StateStore, retryStore *backfill.Store) (*atmossync.Verifier, error) {
 	resyncLimit := rate.Every(f.resyncInterval)
 	if f.unlimitedResyncs {
 		resyncLimit = rate.Inf
 	}
 	verifierLogger := f.logger.With(slog.String("component", "verifier"))
 	var shouldResync gt.Option[func(atmos.DID) bool]
-	if f.resyncKnownReposOnly {
+	if f.requeueOnChainBreak && retryStore != nil {
 		shouldResync = gt.Some(func(did atmos.DID) bool {
-			known, err := backfill.RepoResyncable(context.Background(), f.store, did)
-			// On a metadata error, resync: fetching too much is safe.
-			return err != nil || known
+			_, err := retryStore.RequeueForResync(context.Background(), did,
+				"commit chain broke; queued for re-download", chainBreakRequeueInterval)
+			if err != nil {
+				verifierLogger.Warn("queue repo for re-download", "did", did, "err", err)
+			}
+			// Never resync in memory, whether or not it was queued.
+			return false
 		})
 	}
 	verifier, err := atmossync.NewVerifier(atmossync.VerifierOptions{

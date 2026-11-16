@@ -50,7 +50,7 @@ func TestSessionVerifier_ResyncBudget(t *testing.T) {
 				resyncInterval:   DefaultResyncInterval,
 				unlimitedResyncs: tc.unlimited,
 			}
-			v, err := f.newVerifier(atmossync.NewMemStateStore())
+			v, err := f.newVerifier(atmossync.NewMemStateStore(), nil)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = v.Close() })
 

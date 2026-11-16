@@ -186,6 +186,11 @@ type Config struct {
 	// never been seen. Pair with SkipMergeDiscovery.
 	BackfillRepoListFile string
 
+	// RetryBackfillStore, when set, is the backfill store the steady-state
+	// retry pass shares with whoever queues repos for it (the verifier's
+	// chain-break hook). Sharing one keeps the status counts consistent.
+	RetryBackfillStore *backfill.Store
+
 	// BackfillMaxRepoBytes forwards to backfill.RetryConfig.MaxRepoBytes.
 	BackfillMaxRepoBytes int64
 	// BackfillSpillDir and BackfillSpillThreshold forward to

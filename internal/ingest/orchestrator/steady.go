@@ -10,6 +10,7 @@ import (
 	"github.com/bluesky-social/jetstream/internal/ingest/backfill"
 	"github.com/bluesky-social/jetstream/internal/ingest/live"
 	"github.com/bluesky-social/jetstream/internal/obs"
+	"github.com/jcalabro/atmos"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -145,6 +146,8 @@ func (o *Orchestrator) runSteadyState(ctx context.Context) error {
 					MaxDelay:       o.cfg.FailedRepoRetryMaxDelay,
 					RepoListFile:   o.cfg.BackfillRepoListFile,
 					MaxRepoBytes:   o.cfg.BackfillMaxRepoBytes,
+					BackfillStore:  o.cfg.RetryBackfillStore,
+					ChainRev:       o.chainRev(),
 					SpillDir:       o.cfg.BackfillSpillDir,
 					SpillThreshold: o.cfg.BackfillSpillThreshold,
 				})
@@ -158,4 +161,20 @@ func (o *Orchestrator) runSteadyState(ctx context.Context) error {
 
 		return g.Wait()
 	})
+}
+
+// chainRev returns the retry pass's view of the live stream's newest rev
+// per repo, or nil when verifier state is not available to consult.
+func (o *Orchestrator) chainRev() func(context.Context, atmos.DID) (string, error) {
+	states := o.cfg.SyncStateStore
+	if states == nil {
+		return nil
+	}
+	return func(ctx context.Context, did atmos.DID) (string, error) {
+		state, err := states.LoadChain(ctx, did)
+		if err != nil || state == nil {
+			return "", err
+		}
+		return state.Rev, nil
+	}
 }

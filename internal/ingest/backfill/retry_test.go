@@ -693,11 +693,10 @@ func TestRetryRunner_ParkedClientDefers(t *testing.T) {
 	require.Zero(t, rs.Backfill.RetryCount, "a parked skip is not a failed attempt")
 }
 
-// TestRetryRunner_SpilledRepoCompletesAndIsMarkedLarge: a repo over the
-// spill threshold is loaded through a temporary file, archives exactly as
-// an in-memory one does, is recorded as large (so the verifier never
-// resyncs it in memory), and leaves no temporary file behind.
-func TestRetryRunner_SpilledRepoCompletesAndIsMarkedLarge(t *testing.T) {
+// TestRetryRunner_SpilledRepoCompletes: a repo over the spill threshold is
+// loaded through a temporary file, archives exactly as an in-memory one
+// does, and leaves no temporary file behind.
+func TestRetryRunner_SpilledRepoCompletes(t *testing.T) {
 	t.Parallel()
 	st, w, segmentsDir := newRetryTestWriter(t)
 	bs := newSeededStore(t, st, nil)
@@ -740,10 +739,6 @@ func TestRetryRunner_SpilledRepoCompletesAndIsMarkedLarge(t *testing.T) {
 	rs, err := bs.readRepoStatus(did)
 	require.NoError(t, err)
 	require.Equal(t, StatusComplete, rs.Backfill.Status)
-
-	resyncable, err := RepoResyncable(ctx, st, did)
-	require.NoError(t, err)
-	require.False(t, resyncable, "a repo loaded from disk must not be resynced in memory")
 
 	left, err := os.ReadDir(spillDir)
 	require.NoError(t, err)

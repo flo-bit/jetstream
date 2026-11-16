@@ -1912,3 +1912,42 @@ func (s *Store) deferRetryAttempts(ctx context.Context, defers []retryDeferral) 
 // timeNow is a package var so tests can pin wall-clock values.
 // Production callers don't override this.
 var timeNow = func() time.Time { return time.Now().UTC() }
+
+// RequeueForResync marks a downloaded repo for another full download by the
+// steady-state retry pass, which replaces its archived records. It is how a
+// broken commit chain is repaired without the verifier loading the repo into
+// memory. It reports whether the repo was queued: only a repo whose download
+// completed at least minInterval ago is, so an account whose chain keeps
+// breaking is not downloaded in a loop.
+func (s *Store) RequeueForResync(ctx context.Context, did atmos.DID, reason string, minInterval time.Duration) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	// Most chain breaks are on repos this instance does not hold; answer
+	// those with one read and no transaction.
+	rs, err := s.readRepoStatus(did)
+	if err != nil {
+		return false, err
+	}
+	eligible := func(rs *RepoStatus) bool {
+		return rs != nil && rs.Backfill.Status == StatusComplete &&
+			timeNow().Sub(rs.Backfill.CompletedAt) >= minInterval
+	}
+	if !eligible(rs) {
+		return false, nil
+	}
+	queued := false
+	err = s.updateRepoStatusAndCounts(did, func(rs *RepoStatus, hadRow bool, _ Status) (func(*HostStatus), error) {
+		// Re-check under the transaction: a concurrent call may have won.
+		if !hadRow || !eligible(rs) {
+			return nil, nil
+		}
+		rs.Backfill.Status = StatusFailed
+		rs.Backfill.LastError = truncateErrorString(reason)
+		rs.Backfill.NextAttemptAt = time.Time{}
+		rs.Backfill.RetryCount = 0
+		queued = true
+		return nil, nil
+	})
+	return queued, err
+}
