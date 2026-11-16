@@ -783,19 +783,31 @@ func (c *Consumer) processBatch(ctx context.Context, batch []streaming.Event) er
 			}
 
 			if n := len(segEvts); n > 0 {
-				kept := segEvts[:0]
+				denied := 0
 				for i := range segEvts {
-					if !ingest.CollectionDenied(segEvts[i].Collection) {
-						kept = append(kept, segEvts[i])
+					if ingest.CollectionDenied(segEvts[i].Collection) {
+						denied++
 					}
 				}
-				segEvts = kept
-				if filtered := n - len(kept); filtered > 0 {
-					c.cfg.DropMetrics.AddDropped(ingest.DropSourceLive, ingest.DropReasonFilteredCollection, filtered)
-					if len(kept) == 0 {
-						c.noteUpstreamSeq(evt.Seq)
-						continue
+				if denied == n {
+					// Nothing of this event is archived, so its verifier
+					// state has no row to wait for: promote it now. Left
+					// pending, one entry per account that only ever writes
+					// denied collections would accumulate for good.
+					c.promoteSyncState(segEvts)
+					c.cfg.DropMetrics.AddDropped(ingest.DropSourceLive, ingest.DropReasonFilteredCollection, denied)
+					c.noteUpstreamSeq(evt.Seq)
+					continue
+				}
+				if denied > 0 {
+					kept := segEvts[:0]
+					for i := range segEvts {
+						if !ingest.CollectionDenied(segEvts[i].Collection) {
+							kept = append(kept, segEvts[i])
+						}
 					}
+					segEvts = kept
+					c.cfg.DropMetrics.AddDropped(ingest.DropSourceLive, ingest.DropReasonFilteredCollection, denied)
 				}
 			}
 
