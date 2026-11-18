@@ -240,6 +240,10 @@ type stubServer struct {
 	// real CAR is served. Guarded by transientMu.
 	transientTruncateGetRepo map[atmos.DID]int
 
+	// unservedRecords holds the "collection/rkey" paths for which
+	// repo.getRecord answers RecordNotFound; it serves every other.
+	unservedRecords map[string]bool
+
 	getRepoDelay     time.Duration
 	getRepoActive    atomic.Int64
 	getRepoMaxActive atomic.Int64
@@ -421,6 +425,18 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.transientMu.Unlock()
 		_, _ = w.Write(f.car)
+
+	case "/xrpc/com.atproto.repo.getRecord":
+		q := r.URL.Query()
+		if s.unservedRecords[q.Get("collection")+"/"+q.Get("rkey")] {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "RecordNotFound"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"uri":   "at://" + q.Get("repo") + "/" + q.Get("collection") + "/" + q.Get("rkey"),
+			"value": map[string]any{},
+		})
 
 	default:
 		w.WriteHeader(http.StatusNotFound)

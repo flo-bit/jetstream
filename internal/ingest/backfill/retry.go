@@ -19,6 +19,7 @@ import (
 	"github.com/bluesky-social/jetstream/internal/metastore"
 	"github.com/jcalabro/atmos"
 	atmosbackfill "github.com/jcalabro/atmos/backfill"
+	"github.com/jcalabro/atmos/cbor"
 	"github.com/jcalabro/atmos/mst"
 	atmosrepo "github.com/jcalabro/atmos/repo"
 	atmossync "github.com/jcalabro/atmos/sync"
@@ -725,6 +726,9 @@ func (r *retryRunner) download(ctx context.Context, cand retryCandidate) (*atmos
 		}
 		err = rp.CheckComplete()
 	}
+	if err != nil && rp != nil && errors.Is(err, mst.ErrBlockNotFound) {
+		err = r.dropUnservedRecords(dlCtx, rp, host, err)
+	}
 	if err != nil {
 		releaseRepo(rp, spill)
 		return nil, nil, host, viaFallback, r.classifyDownloadErr(dlCtx, ctx, err)
@@ -737,6 +741,59 @@ func (r *retryRunner) download(ctx context.Context, cand retryCandidate) (*atmos
 		return nil, nil, host, viaFallback, fmt.Errorf("backfill: retry: getRepo DID mismatch: requested %s, CAR commit is %s", cand.DID, rp.DID)
 	}
 	return rp, commit, host, viaFallback, nil
+}
+
+// maxUnservedRecords is how many records without a block a repo may have and
+// still be archived without them. A truncated download is missing far more,
+// or is missing records its host does serve.
+const maxUnservedRecords = 32
+
+// dropUnservedRecords handles a complete download of a damaged repo: its
+// tree names records whose blocks the host no longer has, so every getRepo
+// lacks them and the repo would fail forever, taking its intact records with
+// it. When the host itself answers RecordNotFound for each such record, they
+// are removed from rp's tree, which then holds what the host serves, and nil
+// is returned. Otherwise it returns cause: a record the host does serve was
+// missing, so the download was cut short.
+func (r *retryRunner) dropUnservedRecords(ctx context.Context, rp *atmosrepo.Repo, host string, cause error) error {
+	var missing []string
+	err := rp.Tree.Walk(func(key string, val cbor.CID) error {
+		if _, err := rp.Store.GetBlock(val); err != nil {
+			if !errors.Is(err, mst.ErrBlockNotFound) || len(missing) == maxUnservedRecords {
+				return cause
+			}
+			missing = append(missing, key)
+		}
+		return nil
+	})
+	if err != nil || len(missing) == 0 {
+		// A tree node is missing, or too much is.
+		return cause
+	}
+	bucket, ok := hostBucketFromAuthority(host)
+	if !ok {
+		return cause
+	}
+	client, err := r.clientForHost(bucket)
+	if err != nil {
+		return cause
+	}
+	for _, key := range missing {
+		collection, rkey, _ := strings.Cut(key, "/")
+		served, err := client.HasRecord(ctx, rp.DID, collection, rkey)
+		if err != nil || served {
+			return cause
+		}
+	}
+	for _, key := range missing {
+		if err := rp.Tree.Remove(key); err != nil {
+			return cause
+		}
+	}
+	r.cfg.DropMetrics.AddDropped(ingest.DropSourceBackfill, ingest.DropReasonMissingBlock, len(missing))
+	r.cfg.Logger.InfoContext(ctx, "archiving repo without records its host cannot serve",
+		"did", string(rp.DID), "host", host, "records", len(missing), "first", missing[0])
+	return nil
 }
 
 // releaseRepo removes the temporary file behind a spilled repo. spill may

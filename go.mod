@@ -94,4 +94,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/jcalabro/atmos => github.com/flo-bit/atmos v0.0.0-20261120110556-f7776113ec40
+replace github.com/jcalabro/atmos => github.com/flo-bit/atmos v0.0.0-20261120110557-8c1f8225a701
