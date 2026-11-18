@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"strings"
 	"sync/atomic"
 
 	"github.com/bluesky-social/jetstream/segment"
@@ -39,11 +40,21 @@ type LogEntry struct {
 	memo  atomic.Pointer[any]
 }
 
-// NewLogEntry copies ev, including its payload, into a new entry so the log
-// never aliases a producer's buffers.
+// NewLogEntry copies ev, including its payload and strings, into a new entry
+// so the log never aliases a producer's buffers. The live consumer's strings
+// point into the upstream frame they were decoded from, and one kept here
+// would keep that frame, CAR blocks and all, for as long as the entry.
 func NewLogEntry(ev *segment.Event) *LogEntry {
 	cp := *ev
 	cp.Payload = append([]byte(nil), ev.Payload...)
+	// One allocation for the four strings.
+	all := ev.DID + ev.Collection + ev.Rkey + ev.Rev
+	if len(all) == len(ev.DID) {
+		all = strings.Clone(all) // a lone operand is returned as is
+	}
+	cp.DID, all = all[:len(ev.DID)], all[len(ev.DID):]
+	cp.Collection, all = all[:len(ev.Collection)], all[len(ev.Collection):]
+	cp.Rkey, cp.Rev = all[:len(ev.Rkey)], all[len(ev.Rkey):]
 	bytes := int64(len(cp.Payload) + len(cp.DID) + len(cp.Collection) + len(cp.Rkey) + len(cp.Rev) + 128)
 	return &LogEntry{event: cp, bytes: bytes}
 }

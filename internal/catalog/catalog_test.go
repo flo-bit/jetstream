@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"testing"
+	"unsafe"
 
 	"github.com/bluesky-social/jetstream/segment"
 	"github.com/stretchr/testify/require"
@@ -169,6 +170,23 @@ func TestLogEntry_CopiesPayloadAndMemoizes(t *testing.T) {
 	payload[0] = 9
 	require.Equal(t, []byte{1, 2, 3}, e.Event().Payload)
 	require.Positive(t, e.ApproxBytes())
+
+	// Its strings are copies too: the live consumer's point into a firehose
+	// frame, which an aliasing entry would keep alive.
+	frame := []byte("did:plc:acollrkeyrev and the rest of the frame")
+	str := func(from, to int) string { return unsafe.String(&frame[from], to-from) }
+	for _, ev := range []segment.Event{
+		{DID: str(0, 9), Collection: str(9, 13), Rkey: str(13, 17), Rev: str(17, 20)},
+		{DID: str(0, 9)},
+	} {
+		got := NewLogEntry(&ev).Event()
+		require.Equal(t, ev, *got)
+		for _, s := range []string{got.DID, got.Collection, got.Rkey, got.Rev} {
+			p := uintptr(unsafe.Pointer(unsafe.StringData(s)))
+			start := uintptr(unsafe.Pointer(&frame[0]))
+			require.False(t, s != "" && p >= start && p < start+uintptr(len(frame)), "%q points into the producer's buffer", s)
+		}
+	}
 
 	require.Nil(t, e.LoadMemo())
 	first := e.LoadOrStoreMemo("a")

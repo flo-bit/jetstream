@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"sync"
 
 	"github.com/bluesky-social/jetstream/internal/metastore"
@@ -248,6 +249,15 @@ func newSnapshot() *Snapshot {
 	}
 }
 
+// ownDID returns a copy of did that shares no memory with the caller's.
+// The verifier and the consumer pass DIDs decoded without copying from the
+// upstream frame, so a map key taken as is keeps that whole frame (several
+// kilobytes for a commit) alive for as long as the key: with committedChain
+// full, more than a gigabyte of frames for 8 MB of DIDs.
+func ownDID(did atmos.DID) atmos.DID {
+	return atmos.DID(strings.Clone(string(did)))
+}
+
 func chainKey(did atmos.DID) []byte {
 	return []byte(chainPrefix + string(did))
 }
@@ -303,6 +313,7 @@ func (p *StateStore) SaveChain(_ context.Context, did atmos.DID, state atmossync
 	if err != nil {
 		return fmt.Errorf("syncstate: save chain %s: %w", did, err)
 	}
+	did = ownDID(did)
 	p.mu.Lock()
 	savePending(p.pendingChain, did, pending[string]{buf: append([]byte(nil), buf...), key: state.Rev})
 	p.mu.Unlock()
@@ -379,6 +390,7 @@ func (p *StateStore) SaveHosting(_ context.Context, did atmos.DID, state atmossy
 	if err != nil {
 		return fmt.Errorf("syncstate: save hosting %s: %w", did, err)
 	}
+	did = ownDID(did)
 	p.mu.Lock()
 	savePending(p.pendingHosting, did, pending[int64]{buf: append([]byte(nil), buf...), key: state.Seq})
 	p.mu.Unlock()
@@ -456,6 +468,7 @@ func (p *StateStore) RecordIdentitySeq(did atmos.DID, seq int64) {
 	if cur, ok := p.promotedIdent[did]; ok && cur >= seq {
 		return
 	}
+	did = ownDID(did)
 	p.promotedIdent[did] = seq
 	p.unsnappedIdent[did] = seq
 }
@@ -469,6 +482,7 @@ func (p *StateStore) RecordAccountSeq(did atmos.DID, seq int64) {
 	if cur, ok := p.promotedAccount[did]; ok && cur >= seq {
 		return
 	}
+	did = ownDID(did)
 	p.promotedAccount[did] = seq
 	p.unsnappedAccount[did] = seq
 }
@@ -485,6 +499,7 @@ func (p *StateStore) PromoteChain(did atmos.DID, maxRev string) {
 	if !ok {
 		return
 	}
+	did = ownDID(did)
 	p.promotedChain[did] = buf
 	p.unsnappedChain[did] = buf
 }
@@ -502,6 +517,7 @@ func (p *StateStore) PromoteHosting(did atmos.DID, maxSeq int64) {
 	if !ok {
 		return
 	}
+	did = ownDID(did)
 	p.promotedHosting[did] = buf
 	p.unsnappedHosting[did] = buf
 }

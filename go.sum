@@ -64,8 +64,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/felixge/httpsnoop v1.1.0 h1:3YtUj32ZZkqZtt3sZZsClsymw/QDuVfpNhoA31zeORc=
 github.com/felixge/httpsnoop v1.1.0/go.mod h1:Zqxgdd+1Rkcz8euOqdr7lqgCRJztwr5hp9vDSi5UZCE=
-github.com/flo-bit/atmos v0.0.0-20261120110556-4f61a0bf9377 h1:TPnXe5YGQJiMeiGgtaaGuwhHqBe0h2ijigxEN5KgNa4=
-github.com/flo-bit/atmos v0.0.0-20261120110556-4f61a0bf9377/go.mod h1:eB5yDecPpv2aPVtMZsNPSGdjcKD944t0hQ1S+9Ay77U=
+github.com/flo-bit/atmos v0.0.0-20261120110556-f7776113ec40 h1:N1zR06cxTnLLLLy84kJZhNAuUbPaCzvuUFRXrScg1vI=
+github.com/flo-bit/atmos v0.0.0-20261120110556-f7776113ec40/go.mod h1:eB5yDecPpv2aPVtMZsNPSGdjcKD944t0hQ1S+9Ay77U=
 github.com/getsentry/sentry-go v0.50.0 h1:gkO59rn/i0RCAXUUTflC5QVbTQGPXbaFabs2olVzc9g=
 github.com/getsentry/sentry-go v0.50.0/go.mod h1:+xsDuN+SoRN/xfs1hdq78wnrE3omIZf+FCuh9FOW1C8=
 github.com/go-errors/errors v1.4.2 h1:J6MZopCL4uSllY1OfXM374weqZFFItUbrImctkmUxIA=

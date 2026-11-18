@@ -3,8 +3,11 @@ package syncstate
 import (
 	"context"
 	"fmt"
+	"iter"
+	"maps"
 	"sync/atomic"
 	"testing"
+	"unsafe"
 
 	"github.com/bluesky-social/jetstream/internal/metastore"
 	"github.com/jcalabro/atmos"
@@ -139,4 +142,54 @@ func TestStateStore_CommittedCacheBounded(t *testing.T) {
 	require.NotZero(t, cs.takeGets(), "the oldest were evicted")
 	require.Equal(t, "3lrev19", loadRev(t, s, dids[19]))
 	require.Zero(t, cs.takeGets())
+}
+
+// The verifier and the consumer pass DIDs that point into the upstream frame
+// they were decoded from. A map key that kept such a string would keep the
+// frame; in production that was over a gigabyte for a full committedChain.
+func TestStateStore_KeysDoNotAliasCallerMemory(t *testing.T) {
+	t.Parallel()
+	s := New(newTestStore(t))
+	frame := []byte("did:plc:eeeeeeeeeeeeeeeeeeeeeeee and the rest of a firehose frame")
+	did := atmos.DID(unsafe.String(&frame[0], 32))
+	inFrame := func(k atmos.DID) bool {
+		p := uintptr(unsafe.Pointer(unsafe.StringData(string(k))))
+		start := uintptr(unsafe.Pointer(&frame[0]))
+		return p >= start && p < start+uintptr(len(frame))
+	}
+	check := func(stage string) {
+		t.Helper()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for name, keys := range map[string]iter.Seq[atmos.DID]{
+			"pendingChain":     maps.Keys(s.pendingChain),
+			"pendingHosting":   maps.Keys(s.pendingHosting),
+			"promotedChain":    maps.Keys(s.promotedChain),
+			"promotedHosting":  maps.Keys(s.promotedHosting),
+			"promotedIdent":    maps.Keys(s.promotedIdent),
+			"promotedAccount":  maps.Keys(s.promotedAccount),
+			"unsnappedChain":   maps.Keys(s.unsnappedChain),
+			"unsnappedHosting": maps.Keys(s.unsnappedHosting),
+			"unsnappedIdent":   maps.Keys(s.unsnappedIdent),
+			"unsnappedAccount": maps.Keys(s.unsnappedAccount),
+			"committedChain":   maps.Keys(s.committedChain.cur),
+		} {
+			for k := range keys {
+				require.Falsef(t, inFrame(k), "%s: %s key points into the caller's buffer", stage, name)
+			}
+		}
+	}
+
+	require.NoError(t, s.SaveChain(t.Context(), did, atmossync.ChainState{Rev: "3lrev1", Data: fixedCID(t)}))
+	require.NoError(t, s.SaveHosting(t.Context(), did, atmossync.HostingState{Seq: 5, Active: true}))
+	check("saved")
+	s.PromoteChain(did, "3lrev1")
+	s.PromoteHosting(did, 5)
+	s.RecordIdentitySeq(did, 6)
+	s.RecordAccountSeq(did, 5)
+	check("promoted")
+	require.NoError(t, flush(t, s))
+	check("committed")
+	require.Equal(t, "3lrev1", loadRev(t, s, did))
+	require.Len(t, s.committedChain.cur, 1)
 }
