@@ -8,6 +8,20 @@
 
 Full-network archive, replay, and streaming service for atproto.
 
+> **This is a fork** of [bluesky-social/jetstream](https://github.com/bluesky-social/jetstream)
+> for [Alluvium](https://github.com/flo-bit/alluvium), on the branch `alluvium`.
+> It is a prototype, not affiliated with Bluesky, and `main` tracks upstream.
+> The branch adds:
+>
+> - `--ingest-deny-collections` / `--ingest-keep-collections`: drop collections at ingest
+> - `--backfill-repo-list`: backfill listed repos instead of the whole network
+> - `--backfill-spill-dir`, `--backfill-max-repo-bytes`: load large repos through a temporary file
+> - `--user-agent`, `--verifier-resync-workers`
+> - repair of broken commit chains and of repos whose PDS has lost blocks
+>
+> It builds against [flo-bit/atmos](https://github.com/flo-bit/atmos/tree/alluvium),
+> a fork of atmos v0.8.0 with four patches.
+
 Docker images are available [here](https://github.com/bluesky-social/jetstream/pkgs/container/jetstream).
 
 The original jetstream codebase is available [here](https://github.com/bluesky-social/jetstream-legacy).
