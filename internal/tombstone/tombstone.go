@@ -198,20 +198,26 @@ func (s Snapshot) Merge(other Snapshot) {
 // observeLocked folds one event into the maps and returns the
 // approximate bytes added by any newly inserted entry.
 //
-// Inserted keys are CLONED: events decoded from segment blocks alias
+// Stored keys are CLONED: events decoded from segment blocks alias
 // the block's decompressed buffer (segment decode contract), and a
 // retained map key would pin the entire multi-MB buffer for the life
 // of the entry. Lookups probe with the aliased strings first so the
-// clone is paid only on first insert.
+// clone is paid only when the map is written.
+//
+// Raising an existing entry's seq needs a clone too: assigning through
+// a string key equal to the stored one replaces the stored key with the
+// one used in the assignment.
 func observeLocked(records map[RecordKey]uint64, dids map[string]DIDTombstone, ev *segment.Event) (int64, error) {
 	switch ev.Kind {
 	case segment.KindDelete, segment.KindUpdate:
 		probe := RecordKey{DID: ev.DID, Collection: ev.Collection, Rkey: ev.Rkey}
 		if old, ok := records[probe]; ok {
 			if ev.Seq > old {
-				// Updating via the aliased probe key keeps the
-				// originally-inserted (cloned) key in the map.
-				records[probe] = ev.Seq
+				records[RecordKey{
+					DID:        strings.Clone(ev.DID),
+					Collection: strings.Clone(ev.Collection),
+					Rkey:       strings.Clone(ev.Rkey),
+				}] = ev.Seq
 			}
 			return 0, nil
 		}
@@ -225,7 +231,7 @@ func observeLocked(records map[RecordKey]uint64, dids map[string]DIDTombstone, e
 	case segment.KindSync:
 		if old, ok := dids[ev.DID]; ok {
 			if ev.Seq > old.Seq {
-				dids[ev.DID] = DIDTombstone{Seq: ev.Seq, Reason: "sync"}
+				dids[strings.Clone(ev.DID)] = DIDTombstone{Seq: ev.Seq, Reason: "sync"}
 			}
 			return 0, nil
 		}
@@ -242,7 +248,7 @@ func observeLocked(records map[RecordKey]uint64, dids map[string]DIDTombstone, e
 		}
 		if old, ok := dids[ev.DID]; ok {
 			if ev.Seq > old.Seq {
-				dids[ev.DID] = DIDTombstone{Seq: ev.Seq, Reason: "account"}
+				dids[strings.Clone(ev.DID)] = DIDTombstone{Seq: ev.Seq, Reason: "account"}
 			}
 			return 0, nil
 		}

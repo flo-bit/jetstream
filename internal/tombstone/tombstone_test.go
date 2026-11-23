@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"unsafe"
 
 	"github.com/bluesky-social/jetstream/segment"
 	"github.com/jcalabro/atmos/api/comatproto"
@@ -275,4 +276,72 @@ func TestCompileMatchesShouldDrop(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	}
+}
+
+// TestObserveNeverKeepsCallerStrings checks that no stored key shares memory
+// with an observed event, on first insert and when a later event raises the
+// entry's seq. Decoded events alias their block or upstream frame, and a key
+// that did too would keep the whole buffer alive for as long as the entry.
+func TestObserveNeverKeepsCallerStrings(t *testing.T) {
+	t.Parallel()
+	deleted, err := (&comatproto.SyncSubscribeRepos_Account{DID: "did:plc:a", Active: false, Status: gt.Some("deleted")}).MarshalCBOR()
+	require.NoError(t, err)
+
+	// Each event's strings live in a buffer of its own, as decoded ones do.
+	var frames [][]byte
+	event := func(seq uint64, kind segment.Kind, payload []byte) segment.Event {
+		frame := []byte("did:plc:a" + "app.example.thing" + "3kabcdefghijk")
+		frames = append(frames, frame)
+		s := unsafe.String(&frame[0], len(frame))
+		ev := segment.Event{Seq: seq, Kind: kind, DID: s[:9], Payload: payload}
+		if kind == segment.KindDelete || kind == segment.KindUpdate {
+			ev.Collection, ev.Rkey = s[9:26], s[26:]
+		}
+		return ev
+	}
+	aliased := func(s string) bool {
+		p := uintptr(unsafe.Pointer(unsafe.StringData(s)))
+		for _, f := range frames {
+			if start := uintptr(unsafe.Pointer(&f[0])); p >= start && p < start+uintptr(len(f)) {
+				return true
+			}
+		}
+		return false
+	}
+	check := func(t *testing.T, records map[RecordKey]uint64, dids map[string]DIDTombstone) {
+		t.Helper()
+		for k := range records {
+			require.False(t, aliased(k.DID) || aliased(k.Collection) || aliased(k.Rkey), "record key aliases an event")
+		}
+		for did := range dids {
+			require.False(t, aliased(did), "DID key aliases an event")
+		}
+	}
+
+	events := []segment.Event{
+		event(1, segment.KindUpdate, nil),
+		event(2, segment.KindUpdate, nil),
+		event(3, segment.KindDelete, nil),
+		event(4, segment.KindSync, nil),
+		event(5, segment.KindSync, nil),
+		event(6, segment.KindAccount, deleted),
+		event(7, segment.KindAccount, deleted),
+	}
+
+	set := New()
+	for i := range events {
+		require.NoError(t, set.Observe(&events[i]))
+		check(t, set.records, set.dids)
+	}
+	require.Equal(t, uint64(3), set.records[RecordKey{DID: "did:plc:a", Collection: "app.example.thing", Rkey: "3kabcdefghijk"}])
+	require.Equal(t, DIDTombstone{Seq: 7, Reason: "account"}, set.dids["did:plc:a"])
+	require.Equal(t, recordEntryBytes(RecordKey{DID: "did:plc:a", Collection: "app.example.thing", Rkey: "3kabcdefghijk"})+didEntryBytes("did:plc:a"), set.ApproxBytes())
+
+	// The compactor's path: fold blocks apart, then merge.
+	first, err := Fold(events[:3], 0)
+	require.NoError(t, err)
+	rest, err := Fold(events[3:], 0)
+	require.NoError(t, err)
+	first.Merge(rest)
+	check(t, first.Records, first.DIDs)
 }
